@@ -2,8 +2,16 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { createServerSupabaseClient, getUserId } from "@/lib/supabase";
 import { normalizeToISO } from "@/lib/streaks";
+import { getUserId } from "@/lib/session";
+import {
+  addCompletion,
+  clearCompletions,
+  createHabit as createHabitRecord,
+  deleteHabit as deleteHabitRecord,
+  removeCompletion,
+  updateHabit as updateHabitRecord
+} from "@/lib/store";
 
 const habitSchema = z.object({
   title: z.string().min(1).max(64),
@@ -28,20 +36,8 @@ export async function createHabit(formData: FormData) {
     throw new Error(parsed.error.message);
   }
 
-  const supabase = createServerSupabaseClient();
-  const userId = getUserId();
-
-  const { error } = await supabase.from("habits").insert({
-    user_id: userId,
-    title: parsed.data.title,
-    frequency: parsed.data.frequency,
-    category: parsed.data.category,
-    emoji: parsed.data.emoji
-  });
-
-  if (error) {
-    throw new Error(error.message);
-  }
+  const userId = await getUserId();
+  createHabitRecord(userId, parsed.data);
 
   revalidatePath("/dashboard");
 }
@@ -59,22 +55,8 @@ export async function updateHabit(formData: FormData) {
     throw new Error(parsed.error.message);
   }
 
-  const supabase = createServerSupabaseClient();
-  const userId = getUserId();
-
-  const { error } = await supabase
-    .from("habits")
-    .update({
-      title: parsed.data.title,
-      frequency: parsed.data.frequency,
-      category: parsed.data.category,
-      emoji: parsed.data.emoji
-    })
-    .match({ id: parsed.data.id, user_id: userId });
-
-  if (error) {
-    throw new Error(error.message);
-  }
+  const userId = await getUserId();
+  updateHabitRecord(userId, parsed.data.id, parsed.data);
 
   revalidatePath("/dashboard");
 }
@@ -86,14 +68,8 @@ export async function deleteHabit(formData: FormData) {
     throw new Error("Missing habit id");
   }
 
-  const supabase = createServerSupabaseClient(true);
-  const userId = getUserId();
-
-  const { error } = await supabase.from("habits").delete().match({ id, user_id: userId });
-
-  if (error) {
-    throw new Error(error.message);
-  }
+  const userId = await getUserId();
+  deleteHabitRecord(userId, id);
 
   revalidatePath("/dashboard");
 }
@@ -106,31 +82,13 @@ export async function toggleCompletion(formData: FormData) {
     throw new Error("Missing habit id");
   }
 
-  const supabase = createServerSupabaseClient(true);
-  const userId = getUserId();
+  const userId = await getUserId();
   const today = normalizeToISO(new Date());
 
   if (completed) {
-    const { error } = await supabase.from("habit_completions").insert({
-      habit_id: habitId,
-      user_id: userId,
-      completed_on: today
-    });
-
-    if (error) {
-      throw new Error(error.message);
-    }
+    addCompletion(userId, habitId, today);
   } else {
-    const { error } = await supabase
-      .from("habit_completions")
-      .delete()
-      .eq("habit_id", habitId)
-      .eq("user_id", userId)
-      .eq("completed_on", today);
-
-    if (error) {
-      throw new Error(error.message);
-    }
+    removeCompletion(userId, habitId, today);
   }
 
   revalidatePath("/dashboard");
@@ -143,18 +101,8 @@ export async function resetStreak(formData: FormData) {
     throw new Error("Missing habit id");
   }
 
-  const supabase = createServerSupabaseClient(true);
-  const userId = getUserId();
-
-  const { error } = await supabase
-    .from("habit_completions")
-    .delete()
-    .eq("habit_id", habitId)
-    .eq("user_id", userId);
-
-  if (error) {
-    throw new Error(error.message);
-  }
+  const userId = await getUserId();
+  clearCompletions(userId, habitId);
 
   revalidatePath("/dashboard");
 }
