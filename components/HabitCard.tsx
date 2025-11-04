@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { deleteHabit, resetStreak, toggleCompletion, updateHabit } from "@/app/actions";
 import { HabitWithStats } from "@/lib/types";
 import { isCompletionToday } from "@/lib/streaks";
@@ -12,13 +12,26 @@ type HabitCardProps = {
 export function HabitCard({ habit }: HabitCardProps) {
   const [editMode, setEditMode] = useState(false);
   const [pending, startTransition] = useTransition();
+  const [confettiBursts, setConfettiBursts] = useState<number[]>([]);
+  const confettiId = useRef(0);
   const completedToday = useMemo(
     () => isCompletionToday(habit.completions),
     [habit.completions]
   );
 
+  const triggerConfetti = () => {
+    const id = confettiId.current++;
+    setConfettiBursts((previous) => [...previous, id]);
+    window.setTimeout(() => {
+      setConfettiBursts((previous) => previous.filter((burstId) => burstId !== id));
+    }, 2200);
+  };
+
   return (
     <article className="habit-card">
+      {confettiBursts.map((burstId) => (
+        <ConfettiBurst key={burstId} />
+      ))}
       <header>
         <div className="title">
           <span className="emoji">{habit.emoji ?? "🌱"}</span>
@@ -62,7 +75,11 @@ export function HabitCard({ habit }: HabitCardProps) {
               startTransition(() => {
                 formData.set("habitId", habit.id);
                 formData.set("completed", (!completedToday).toString());
-                return toggleCompletion(formData);
+                return toggleCompletion(formData).then(() => {
+                  if (!completedToday) {
+                    triggerConfetti();
+                  }
+                });
               })
             }
           >
@@ -115,5 +132,48 @@ export function HabitCard({ habit }: HabitCardProps) {
         </form>
       </dl>
     </article>
+  );
+}
+
+const CONFETTI_COLORS = ["#f87171", "#facc15", "#34d399", "#60a5fa", "#c084fc"] as const;
+
+type ConfettiPiece = {
+  color: string;
+  delay: number;
+  duration: number;
+  left: number;
+  size: number;
+  thickness: number;
+};
+
+function ConfettiBurst() {
+  const pieces = useMemo<ConfettiPiece[]>(() => {
+    return Array.from({ length: 60 }, () => ({
+      color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+      delay: Math.random() * 0.2,
+      duration: 1.6 + Math.random() * 0.8,
+      left: Math.random() * 100,
+      size: 6 + Math.random() * 8,
+      thickness: 2 + Math.random() * 4,
+    }));
+  }, []);
+
+  return (
+    <div className="confetti-container" aria-hidden>
+      {pieces.map((piece, index) => (
+        <span
+          key={index}
+          className="confetti-piece"
+          style={{
+            left: `${piece.left}%`,
+            width: `${piece.size}px`,
+            height: `${piece.thickness}px`,
+            backgroundColor: piece.color,
+            animationDelay: `${piece.delay}s`,
+            animationDuration: `${piece.duration}s`,
+          }}
+        />
+      ))}
+    </div>
   );
 }
